@@ -1,0 +1,16 @@
+[package]
+name = "toolsrs"
+version = "0.1.0"
+authors = ["GramYang <18872253531@163.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+heapsize = "0.4"
+num_cpus = "1.13.0"
+ahash = "0.3.5"
+
+[[example]]
+name = "linked_hash_map"
+path = "example/lhm.rs"
