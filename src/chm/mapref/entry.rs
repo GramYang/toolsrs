@@ -99,6 +99,7 @@ impl<'a, K: Eq + Hash, V, S: BuildHasher> VacantEntry<'a, K, V, S> {
     #[inline]
     pub fn insert(mut self, value: V) -> RefMut<'a, K, V, S> {
         unsafe {
+            //ptr::read会将&自动转换成不变裸指针
             let c: K = ptr::read(&self.key);
             self.shard.insert(self.key, SharedValue::new(value));
             let (k, v) = self.shard.get_key_value(&c).unwrap();

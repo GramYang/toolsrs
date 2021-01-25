@@ -10,7 +10,3 @@ edition = "2018"
 heapsize = "0.4"
 num_cpus = "1.13.0"
 ahash = "0.3.5"
-
-[[example]]
-name = "linked_hash_map"
-path = "example/lhm.rs"

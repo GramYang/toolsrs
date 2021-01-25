@@ -8,6 +8,7 @@ use std::cmp::Ordering;
 mod heapsize;
 mod test;
 
+//KeyRef保存一个K的不变裸指针
 struct KeyRef<K> { k: *const K }
 
 struct Node<K, V> {
@@ -45,10 +46,11 @@ impl<K: Eq> Eq for KeyRef<K> {}
 struct Qey<Q: ?Sized>(Q);
 
 impl<Q: ?Sized> Qey<Q> {
+    //transmute类型转换
     fn from_ref(q: &Q) -> &Self { unsafe { mem::transmute(q) } }
 }
 
-//配合hashmap的get，其key值可以是指定key的borrow返回值
+//调用的Qey::from_ref
 impl<K, Q: ?Sized> Borrow<Qey<Q>> for KeyRef<K> where K: Borrow<Q> {
     fn borrow(&self) -> &Qey<Q> {
         Qey::from_ref(unsafe { (*self.k).borrow() })
@@ -66,6 +68,8 @@ impl<K, V> Node<K, V> {
     }
 }
 
+//这里会将Node中的key和value的引用drop掉，但是不会drop其值
+//这里主要清除的是free，也就是空node
 unsafe fn drop_empty_node<K, V>(the_box: *mut Node<K, V>) {
     // Prevent compiler from trying to drop the un-initialized key and values in the node.
     let Node { key, value, .. } = *Box::from_raw(the_box);
@@ -109,6 +113,7 @@ impl<K, V, S> LinkedHashMap<K, V, S> {
         let mut cur = (*self.head).next;
         while cur != self.head {
             let next = (*cur).next;
+            //这里用Box封装一下裸指针cur，这样方法执行完就释放了
             Box::from_raw(cur);
             cur = next;
         }
@@ -116,6 +121,7 @@ impl<K, V, S> LinkedHashMap<K, V, S> {
 
     fn clear_free_list(&mut self) {
         unsafe {
+            //复制指针为free，然后释放掉所有的next
             let mut free = self.free;
             while ! free.is_null() {
                 let next_free = (*free).next;
@@ -126,10 +132,9 @@ impl<K, V, S> LinkedHashMap<K, V, S> {
         }
     }
 
-    //先初始化head
+    //初始化裸指针head，next和prev全部用head赋值
     fn ensure_guard_node(&mut self) {
         if self.head.is_null() {
-            //初始化head，包括其next和prev
             unsafe {
                 let node_layout = std::alloc::Layout::new::<Node<K, V>>();
                 self.head =  std::alloc::alloc(node_layout) as *mut Node<K, V>;
@@ -216,6 +221,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
         //从map中取值，返回插入键值对Node裸指针和旧值
         let (node, old_val) = match self.map.get(&KeyRef{k: &k}) {
             Some(node) => {
+                //这里的&mut配合ptr::replace的参数类型将value转换为裸指针
                 let old_val = unsafe { ptr::replace(&mut (**node).value, v) };
                 (*node, Some(old_val))
             }
@@ -224,7 +230,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
                     //用Box存入堆，再返回裸指针
                     Box::into_raw(Box::new(Node::new(k, v)))
                 } else {
-                    //free的头写入键值对Node裸指针，在堆上，然后返回这个头
+                    //取出裸指针self.free，写入Node::new(k, v)后返回
                     unsafe {
                         let free = self.free;
                         self.free = (*free).next;
@@ -291,6 +297,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
                 (*node).next = self.free;
                 self.free = node;
                 // drop the key and return the value
+                //ptr::read读取不变裸指针返回指向值
                 drop(ptr::read(&(*node).key));
                 ptr::read(&(*node).value)
             }
@@ -311,6 +318,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
         let lru = unsafe { (*self.head).prev };
         self.detach(lru);
         self.map
+            //这里的k是不可变裸指针，而&(*lru).key其实就是&K，利用k的类型进行的转换
             .remove(&KeyRef{k: unsafe { &(*lru).key }})
             .map(|e| {
                 let e = *unsafe { Box::from_raw(e) };
@@ -327,6 +335,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
         let lru = unsafe { (*self.head).prev };
         self.map
             .get(&KeyRef{k: unsafe { &(*lru).key }})
+            //&(**e).key就是&K，**e的结果就是Node<K,V>
             .map(|e| unsafe { (&(**e).key, &(**e).value) })
     }
 
@@ -893,7 +902,7 @@ pub enum Entry<'a, K: 'a, V: 'a, S: 'a = hash_map::RandomState> {
 pub struct OccupiedEntry<'a, K: 'a, V: 'a, S: 'a = hash_map::RandomState> {
     entry: *mut Node<K, V>,
     map: *mut LinkedHashMap<K, V, S>,
-    marker: marker::PhantomData<&'a K>,
+    marker: marker::PhantomData<&'a K>,//PhantomData用于提示K泛型
 }
 
 /// A view into a single empty location in a `LinkedHashMap`.
